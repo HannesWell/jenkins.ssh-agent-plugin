@@ -130,14 +130,16 @@ public final class ExecRemoteAgent implements Serializable {
         try {
             keyFile.chmod(0600);
 
-            FilePath askpass = passphrase != null ? createAskpassScript(temp) : null;
+            boolean unix = launcher.isUnix();
+            FilePath askpass = passphrase != null ? createAskpassScript(temp, unix) : null;
             try {
 
                 Map<String,String> env = new HashMap<>(agentEnv);
                 if (passphrase != null) {
                     env.put("SSH_PASSPHRASE", passphrase);
+                    env.put("SSH_ASKPASS_REQUIRE", "force");
                     env.put("DISPLAY", "bogus"); // just to force using SSH_ASKPASS
-                    env.put("SSH_ASKPASS", askpass.getRemote());
+                    env.put("SSH_ASKPASS", getAskpassEnvironmentValue(askpass.getRemote(), unix));
                 }
                 
                 // as the next command is in quiet mode, we just add a message to the log
@@ -215,16 +217,24 @@ public final class ExecRemoteAgent implements Serializable {
         return agentOutput.substring(pos, end);
     }
     
+    static String getAskpassEnvironmentValue(String askpassPath, boolean unix) {
+        return unix ? askpassPath : '"' + askpassPath + '"';
+    }
+
+    static String getAskpassScriptSuffix(boolean unix) {
+        return unix ? ".sh" : ".bat";
+    }
+
+    static String getAskpassScriptContent(boolean unix) {
+        return unix ? "#!/bin/sh\necho \"$SSH_PASSPHRASE\"\nrm \"$0\"\n" : "@ECHO %SSH_PASSPHRASE%\r\nDEL \"%~f0\"\r\n";
+    }
+
     /**
-     * Creates a self-deleting script for SSH_ASKPASS. Self-deleting to be able to detect a wrong passphrase. 
+     * Creates a self-deleting script for SSH_ASKPASS. Self-deleting to be able to detect a wrong passphrase.
      */
-    private FilePath createAskpassScript(FilePath temp) throws IOException, InterruptedException {
-        // TODO: assuming that ssh-add runs the script in shell even on Windows, not cmd
-        //       for cmd following could work
-        //       suffix = ".bat";
-        //       script = "@ECHO %SSH_PASSPHRASE%\nDEL \"" + askpass.getAbsolutePath() + "\"\n";
-        
-        FilePath askpass = temp.createTextTempFile("askpass_", ".sh", "#!/bin/sh\necho \"$SSH_PASSPHRASE\"\nrm \"$0\"\n");
+    private FilePath createAskpassScript(FilePath temp, boolean unix) throws IOException, InterruptedException {
+        FilePath askpass = temp.createTextTempFile(
+                "askpass_", getAskpassScriptSuffix(unix), getAskpassScriptContent(unix));
 
         // executable only for a current user
         askpass.chmod(0700);

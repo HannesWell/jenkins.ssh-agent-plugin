@@ -59,4 +59,32 @@ class ExecRemoteAgentTest {
                 AbortException.class, () -> ExecRemoteAgent.getAgentValue("SSH_AUTH_SOCK=/tmp/ssh/agent.1", "SSH_AUTH_SOCK"));
         assertThat(e.getMessage(), containsString("SSH_AUTH_SOCK"));
     }
+
+    @Test
+    void quotesWindowsAskpassPathForEnvironment() {
+        assertEquals(
+                "\"C:\\Program Files\\Jenkins\\askpass.bat\"",
+                ExecRemoteAgent.getAskpassEnvironmentValue("C:\\Program Files\\Jenkins\\askpass.bat", false));
+    }
+
+    @Test
+    void leavesUnixAskpassPathUnquotedForEnvironment() {
+        assertEquals("/tmp/askpass.sh", ExecRemoteAgent.getAskpassEnvironmentValue("/tmp/askpass.sh", true));
+    }
+
+    @Test
+    void createsWindowsAskpassBatchScriptContent() {
+        assertEquals(".bat", ExecRemoteAgent.getAskpassScriptSuffix(false));
+        String content = ExecRemoteAgent.getAskpassScriptContent(false);
+        assertThat(content, containsString("@ECHO %SSH_PASSPHRASE%"));
+        assertThat(content, containsString("DEL \"%~f0\""));
+    }
+
+    @Test
+    void createsUnixAskpassShellScriptContent() {
+        assertEquals(".sh", ExecRemoteAgent.getAskpassScriptSuffix(true));
+        String content = ExecRemoteAgent.getAskpassScriptContent(true);
+        assertThat(content, containsString("echo \"$SSH_PASSPHRASE\""));
+        assertThat(content, containsString("rm \"$0\""));
+    }
 }
